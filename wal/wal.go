@@ -127,8 +127,11 @@ func (w *WAL) Write(recordType uint8, payload []byte) (uint64, error) {
 	lsn := w.nextLSN
 
 	encoded := encode(Record{LSN: w.nextLSN, Type: recordType, Payload: payload})
-	if _, err := w.file.Write(encoded); err != nil {
+	if _, err := w.buf.Write(encoded); err != nil {
 		return 0, fmt.Errorf("file write: %w", err)
+	}
+	if err := w.buf.Flush(); err != nil {
+		return 0, fmt.Errorf("flush buffer: %w", err)
 	}
 	if err := w.file.Sync(); err != nil {
 		return 0, fmt.Errorf("fsync: %w", err)
