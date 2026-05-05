@@ -30,8 +30,6 @@ type node struct {
 	forward []*node // len(forward) == this node's level count
 }
 
-// newNode allocates a node with the given level count.
-// level is determined at insertion time by randomLevel().
 func newNode(key string, value []byte, level int) *node {
 	return &node{
 		key:     key,
@@ -53,7 +51,7 @@ func randomLevel() int {
 
 type SkipList struct {
 	mu     sync.RWMutex
-	head   *node // sentinel head node
+	head   *node
 	level  int   // current highest level in use
 	count  int   // total nodes including tombstones, used for Iter capacity
 	length int   // number of live (non-deleted) keys
@@ -66,8 +64,6 @@ func NewSkipList() *SkipList {
 	}
 }
 
-// Set inserts or updates a key. If the key already exists, its value
-// is replaced. Deleted keys (tombstones) are overwritten with the new value.
 func (sl *SkipList) Set(key string, value []byte) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
@@ -113,6 +109,7 @@ func (sl *SkipList) Set(key string, value []byte) {
 	}
 
 	n := newNode(key, value, level)
+
 	for i := range level {
 		n.forward[i] = update[i].forward[i]
 		update[i].forward[i] = n
@@ -120,4 +117,69 @@ func (sl *SkipList) Set(key string, value []byte) {
 	sl.length++
 	sl.count++
 	sl.size += int64(len(key) + len(value))
+}
+
+func (sl *SkipList) Delete(key string) {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+
+	update := make([]*node, maxLevel)
+	current := sl.head
+
+	for i := sl.level - 1; i >= 0; i-- {
+		for current.forward[i] != nil && current.forward[i].key < key {
+			current = current.forward[i]
+		}
+		update[i] = current
+	}
+
+	target := update[0].forward[0]
+	if target != nil && target.key == key {
+		if target.deleted {
+			return
+		}
+		target.deleted = true
+		sl.length--
+		sl.size -= int64(len(target.key) + len(target.value))
+		target.value = nil
+		return
+	}
+
+	level := randomLevel()
+	if level > sl.level {
+		for i := sl.level; i < level; i++ {
+			update[i] = sl.head
+		}
+		sl.level = level
+	}
+
+	n := newNode(key, nil, level)
+	n.deleted = true
+
+	for i := range level {
+		n.forward[i] = update[i].forward[i]
+		update[i].forward[i] = n
+	}
+	sl.count++
+	sl.size += int64(len(key)) // tombstone has no value but the key still occupies memory
+}
+
+func (sl *SkipList) Get(key string) ([]byte, bool) {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+
+	current := sl.head
+
+	for i := sl.level - 1; i >= 0; i-- {
+		for current.forward[i] != nil && current.forward[i].key < key {
+			current = current.forward[i]
+		}
+	}
+
+	candidate := current.forward[0]
+	if candidate == nil || candidate.key != key || candidate.deleted {
+		return nil, false
+	}
+
+	return candidate.value, true
 }
