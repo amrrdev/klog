@@ -68,8 +68,6 @@ func (sl *SkipList) Set(key string, value []byte) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	// update[i] is the rightmost node at level i whose key < key.
-	// After inserting the new node, update[i].forward[i] must point to it.
 	update := make([]*node, maxLevel)
 
 	current := sl.head
@@ -81,7 +79,10 @@ func (sl *SkipList) Set(key string, value []byte) {
 		update[i] = current
 	}
 
-	// Check if the key already exists at level 0.
+	if sl.level == 0 {
+		update[0] = sl.head
+	}
+
 	existing := update[0].forward[0]
 	if existing != nil && existing.key == key {
 		if existing.deleted {
@@ -131,6 +132,10 @@ func (sl *SkipList) Delete(key string) {
 			current = current.forward[i]
 		}
 		update[i] = current
+	}
+
+	if sl.level == 0 {
+		update[0] = sl.head
 	}
 
 	target := update[0].forward[0]
