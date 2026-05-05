@@ -140,7 +140,7 @@ func (sl *SkipList) Delete(key string) {
 		}
 		target.deleted = true
 		sl.length--
-		sl.size -= int64(len(target.key) + len(target.value))
+		sl.size -= int64(len(target.value))
 		target.value = nil
 		return
 	}
@@ -165,8 +165,8 @@ func (sl *SkipList) Delete(key string) {
 }
 
 func (sl *SkipList) Get(key string) ([]byte, bool) {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
 
 	current := sl.head
 
@@ -182,4 +182,38 @@ func (sl *SkipList) Get(key string) ([]byte, bool) {
 	}
 
 	return candidate.value, true
+}
+
+type Entry struct {
+	Key     string
+	Value   []byte
+	Deleted bool
+}
+
+// Iter returns all entries in sorted key order, including tombstones.
+// The caller is responsible for handling tombstones appropriately —
+// during flush, tombstones are written to the SSTable as deletion markers.
+func (sl *SkipList) Iter() []Entry {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+
+	entries := make([]Entry, 0, sl.count)
+	current := sl.head.forward[0]
+
+	for current != nil {
+		entries = append(entries, Entry{
+			Key:     current.key,
+			Value:   current.value,
+			Deleted: current.deleted,
+		})
+		current = current.forward[0]
+	}
+
+	return entries
+}
+
+func (sl *SkipList) Size() int64 {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.size
 }
